@@ -6,16 +6,43 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strconv"
 	"sync"
+	"time"
 )
 
-func downloadFile(url, savePath string) error {
+func downloadFile(client *http.Client, url, savePath string) error {
+	fmt.Println("Url:", url)
 	err := os.MkdirAll(savePath, 0750)
 	if err != nil {
 		return err
 	}
 
-	resp, err := http.Get(url)
+	resp, err := client.Head(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Размер файла
+	contentLength := resp.Header.Get("Content-Length")
+	size, _ := strconv.ParseInt(contentLength, 10, 64)
+	if size == 0 {
+		fmt.Println("Размер: неизвестен")
+	} else {
+		fmt.Println("Размер:", size)
+	}
+
+	// Поддержка докачки
+	acceptRanges := resp.Header.Get("Accept-Ranges")
+	supportsResume := acceptRanges == "bytes"
+	if supportsResume {
+		fmt.Println("Докачка: поддерживается")
+	} else {
+		fmt.Println("Докачка: не поддерживается")
+	}
+
+	resp, err = http.Get(url)
 	if err != nil {
 		return err
 	}
@@ -48,13 +75,15 @@ func main() {
 	savePath := os.Args[1]
 	urls := os.Args[2:]
 
+	client := &http.Client{Timeout: 30 * time.Second}
+
 	var wg sync.WaitGroup
 
 	for _, url := range urls {
 		wg.Add(1)
 		go func(u string) {
 			defer wg.Done()
-			err := downloadFile(u, savePath)
+			err := downloadFile(client, u, savePath)
 			if err != nil {
 				fmt.Println(err)
 			}
