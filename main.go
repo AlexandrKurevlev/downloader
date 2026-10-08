@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"sync"
 )
 
 func downloadFile(url, savePath string) error {
@@ -47,8 +48,18 @@ func main() {
 	savePath := os.Args[1]
 	urls := os.Args[2:]
 
-	err := downloadFile(urls[0], savePath)
-	if err != nil {
-		fmt.Println(err)
+	var wg sync.WaitGroup
+
+	for _, url := range urls {
+		wg.Add(1)
+		go func(u string) {
+			defer wg.Done()
+			err := downloadFile(u, savePath)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}(url)
 	}
+
+	wg.Wait()
 }
