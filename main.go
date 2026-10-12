@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path"
@@ -26,11 +27,11 @@ func downloadFile(client *http.Client, url, savePath string) error {
 
 	// Размер файла
 	contentLength := resp.Header.Get("Content-Length")
-	size, _ := strconv.ParseInt(contentLength, 10, 64)
-	if size == 0 {
+	fileSize, _ := strconv.ParseInt(contentLength, 10, 64)
+	if fileSize == 0 {
 		fmt.Println("Размер: неизвестен")
 	} else {
-		fmt.Println("Размер:", size)
+		fmt.Println("Размер:", fileSize)
 	}
 
 	// Поддержка докачки
@@ -40,6 +41,15 @@ func downloadFile(client *http.Client, url, savePath string) error {
 		fmt.Println("Докачка: поддерживается")
 	} else {
 		fmt.Println("Докачка: не поддерживается")
+	}
+
+	const chunkSize = 10 * 1024 * 1024 // 10 MB
+
+	totalChunks := int((fileSize + chunkSize - 1) / chunkSize)
+	fmt.Println("Размер чанка:", chunkSize, "байт")
+	fmt.Println("Количество чанков:", totalChunks)
+	for i := 1; i <= totalChunks; i++ {
+		fmt.Printf("Чанк %d/%d: байты %d-%d\n", i, totalChunks, chunkSize*(i-1), int64(math.Min(float64(chunkSize*i-1), float64(fileSize))))
 	}
 
 	resp, err = http.Get(url)
@@ -57,6 +67,8 @@ func downloadFile(client *http.Client, url, savePath string) error {
 		return err
 	}
 	defer file.Close()
+
+	file.Truncate(fileSize)
 
 	_, err = io.Copy(file, resp.Body)
 	if err != nil {
