@@ -49,7 +49,7 @@ func downloadFile(client *http.Client, url, savePath string) error {
 	fmt.Println("Размер чанка:", chunkSize, "байт")
 	fmt.Println("Количество чанков:", totalChunks)
 	for i := 1; i <= totalChunks; i++ {
-		fmt.Printf("Чанк %d/%d: байты %d-%d\n", i, totalChunks, chunkSize*(i-1), int64(math.Min(float64(chunkSize*i-1), float64(fileSize))))
+		fmt.Printf("Чанк %d/%d: байты %d-%d\n", i, totalChunks, chunkSize*(i-1), int64(math.Min(float64(chunkSize*i-1), float64(fileSize-1))))
 	}
 
 	resp, err = http.Get(url)
