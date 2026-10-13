@@ -43,25 +43,6 @@ func downloadFile(client *http.Client, url, savePath string) error {
 		fmt.Println("Докачка: не поддерживается")
 	}
 
-	const chunkSize = 10 * 1024 * 1024 // 10 MB
-
-	totalChunks := int((fileSize + chunkSize - 1) / chunkSize)
-	fmt.Println("Размер чанка:", chunkSize, "байт")
-	fmt.Println("Количество чанков:", totalChunks)
-	for i := 1; i <= totalChunks; i++ {
-		fmt.Printf("Чанк %d/%d: байты %d-%d\n", i, totalChunks, chunkSize*(i-1), int64(math.Min(float64(chunkSize*i-1), float64(fileSize-1))))
-	}
-
-	resp, err = http.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("сервер вернул %d", resp.StatusCode)
-	}
-
 	file, err := os.Create(path.Join(savePath, path.Base(url)))
 	if err != nil {
 		return err
@@ -70,9 +51,33 @@ func downloadFile(client *http.Client, url, savePath string) error {
 
 	file.Truncate(fileSize)
 
-	_, err = io.Copy(file, resp.Body)
-	if err != nil {
-		return err
+	const chunkSize = 10 * 1024 * 1024 // 10 MB
+
+	totalChunks := int((fileSize + chunkSize - 1) / chunkSize)
+	fmt.Println("Размер чанка:", chunkSize, "байт")
+	fmt.Println("Количество чанков:", totalChunks)
+	for i := 1; i <= totalChunks; i++ {
+		start := chunkSize * (i - 1)
+		end := int64(math.Min(float64(chunkSize*i-1), float64(fileSize-1)))
+		fmt.Printf("Чанк %d/%d: байты %d-%d\n", i, totalChunks, start, end)
+
+		req, _ := http.NewRequest("GET", url, nil)
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusPartialContent {
+			return fmt.Errorf("сервер вернул %d", resp.StatusCode)
+		}
+
+		_, err = io.Copy(file, resp.Body)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
