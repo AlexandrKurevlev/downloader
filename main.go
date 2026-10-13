@@ -57,24 +57,31 @@ func downloadFile(client *http.Client, url, savePath string) error {
 	fmt.Println("Размер чанка:", chunkSize, "байт")
 	fmt.Println("Количество чанков:", totalChunks)
 	for i := 1; i <= totalChunks; i++ {
-		start := chunkSize * (i - 1)
+		start := int64(chunkSize * (i - 1))
 		end := int64(math.Min(float64(chunkSize*i-1), float64(fileSize-1)))
 		fmt.Printf("Чанк %d/%d: байты %d-%d\n", i, totalChunks, start, end)
 
-		req, _ := http.NewRequest("GET", url, nil)
-		req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
+		err = func(start, end int64) error {
+			req, _ := http.NewRequest("GET", url, nil)
+			req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
 
-		resp, err := client.Do(req)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
+			resp, err := client.Do(req)
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusPartialContent {
-			return fmt.Errorf("сервер вернул %d", resp.StatusCode)
-		}
+			if resp.StatusCode != http.StatusPartialContent {
+				return fmt.Errorf("сервер вернул %d", resp.StatusCode)
+			}
 
-		_, err = io.Copy(file, resp.Body)
+			_, err = io.Copy(file, resp.Body)
+			if err != nil {
+				return err
+			}
+
+			return nil
+		}(start, end)
 		if err != nil {
 			return err
 		}
