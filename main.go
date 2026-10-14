@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -11,6 +12,13 @@ import (
 	"sync"
 	"time"
 )
+
+type DownloadState struct {
+	URL         string `json:"url"`
+	TotalSize   int64  `json:"total_size"`
+	ChunkSize   int    `json:"chunk_size"`
+	TotalChunks int    `json:"total_chunks"`
+}
 
 func downloadFile(client *http.Client, url, savePath string) error {
 	fmt.Println("Url:", url)
@@ -56,6 +64,15 @@ func downloadFile(client *http.Client, url, savePath string) error {
 	totalChunks := int((fileSize + chunkSize - 1) / chunkSize)
 	fmt.Println("Размер чанка:", chunkSize, "байт")
 	fmt.Println("Количество чанков:", totalChunks)
+	
+	state := DownloadState{
+		URL:         url,
+		TotalSize:   fileSize,
+		ChunkSize:   chunkSize,
+		TotalChunks: totalChunks,
+	}
+	data, _ := json.MarshalIndent(state, "", " ")
+	os.WriteFile(path.Join(savePath, path.Base(url) + ".progress"), data, 0644)
 	for i := 1; i <= totalChunks; i++ {
 		start := int64(chunkSize * (i - 1))
 		end := int64(math.Min(float64(chunkSize*i-1), float64(fileSize-1)))
