@@ -75,6 +75,7 @@ func downloadFile(client *http.Client, url, savePath string) error {
 				return fmt.Errorf("сервер вернул %d", resp.StatusCode)
 			}
 
+			file.Seek(start, io.SeekStart)
 			_, err = io.Copy(file, resp.Body)
 			if err != nil {
 				return err
