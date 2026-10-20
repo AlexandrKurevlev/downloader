@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -52,7 +53,7 @@ func downloadFile(client *http.Client, url, savePath string) error {
 		fmt.Println("Докачка: не поддерживается")
 	}
 
-	file, err := os.Create(path.Join(savePath, path.Base(url)))
+	file, err := os.OpenFile(path.Join(savePath, path.Base(url)), os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
@@ -73,9 +74,24 @@ func downloadFile(client *http.Client, url, savePath string) error {
 		TotalChunks:      totalChunks,
 		DownloadedChunks: make([]bool, totalChunks),
 	}
-	data, _ := json.MarshalIndent(state, "", " ")
-	os.WriteFile(path.Join(savePath, path.Base(url)+".progress"), data, 0644)
+	progressFileName := path.Join(savePath, path.Base(url)+".progress")
+	_, err = os.Stat(progressFileName)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			data, _ := json.MarshalIndent(state, "", " ")
+			os.WriteFile(path.Join(savePath, path.Base(url)+".progress"), data, 0644)
+		} else {
+			return err
+		}
+	} else {
+		data, _ := os.ReadFile(progressFileName)
+		json.Unmarshal(data, &state)
+	}
 	for i := 1; i <= totalChunks; i++ {
+		if state.DownloadedChunks[i-1] {
+			fmt.Printf("Чанк %d уже загружен, пропускаем\n", i)
+			continue
+		}
 		start := int64(chunkSize * (i - 1))
 		end := int64(math.Min(float64(chunkSize*i-1), float64(fileSize-1)))
 		fmt.Printf("Чанк %d/%d: байты %d-%d\n", i, totalChunks, start, end)
@@ -102,7 +118,7 @@ func downloadFile(client *http.Client, url, savePath string) error {
 
 			state.DownloadedChunks[i-1] = true
 			data, _ := json.MarshalIndent(state, "", " ")
-			os.WriteFile(path.Join(savePath, path.Base(url)+".progress"), data, 0644)
+			os.WriteFile(progressFileName, data, 0644)
 
 			return nil
 		}(start, end)
