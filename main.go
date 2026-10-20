@@ -13,6 +13,10 @@ import (
 	"time"
 )
 
+const chunkSize = 10 * 1024 * 1024 // 10 MB
+const maxRetries = 3
+const retryDelay = 2 * time.Second
+
 type DownloadState struct {
 	URL              string `json:"url"`
 	TotalSize        int64  `json:"total_size"`
@@ -60,13 +64,11 @@ func downloadFile(client *http.Client, url, savePath string) error {
 
 	file.Truncate(fileSize)
 
-	const chunkSize = 10 * 1024 * 1024 // 10 MB
-
 	totalChunks := int((fileSize + chunkSize - 1) / chunkSize)
 	fmt.Println("Размер чанка:", chunkSize, "байт")
 	fmt.Println("Количество чанков:", totalChunks)
 
-	state := DownloadState{
+	state := &DownloadState{
 		URL:              url,
 		TotalSize:        fileSize,
 		ChunkSize:        chunkSize,
@@ -91,39 +93,52 @@ func downloadFile(client *http.Client, url, savePath string) error {
 			fmt.Printf("Чанк %d уже загружен, пропускаем\n", i)
 			continue
 		}
-		start := int64(chunkSize * (i - 1))
-		end := int64(math.Min(float64(chunkSize*i-1), float64(fileSize-1)))
-		fmt.Printf("Чанк %d/%d: байты %d-%d\n", i, totalChunks, start, end)
 
-		err = func(start, end int64) error {
-			req, _ := http.NewRequest("GET", url, nil)
-			req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			start := int64(chunkSize * (i - 1))
+			end := int64(math.Min(float64(chunkSize*i-1), float64(fileSize-1)))
+			fmt.Printf("Чанк %d/%d: байты %d-%d\n", i, totalChunks, start, end)
 
-			resp, err := client.Do(req)
-			if err != nil {
-				return err
-			}
-			defer resp.Body.Close()
+			err = downloadChunk(client, start, end, state, file)
+			if err == nil {
+				state.DownloadedChunks[i-1] = true
+				data, _ := json.MarshalIndent(state, "", " ")
+				os.WriteFile(progressFileName, data, 0644)
 
-			if resp.StatusCode != http.StatusPartialContent {
-				return fmt.Errorf("сервер вернул %d", resp.StatusCode)
+				break
 			}
 
-			file.Seek(start, io.SeekStart)
-			_, err = io.Copy(file, resp.Body)
-			if err != nil {
-				return err
+			if attempt < maxRetries {
+				fmt.Printf("Ошибка %v, повтор через %v...\n", err, retryDelay)
+				time.Sleep(retryDelay)
+			} else {
+				fmt.Printf("Ошибка: %v", err)
+				break
 			}
-
-			state.DownloadedChunks[i-1] = true
-			data, _ := json.MarshalIndent(state, "", " ")
-			os.WriteFile(progressFileName, data, 0644)
-
-			return nil
-		}(start, end)
-		if err != nil {
-			return err
 		}
+	}
+
+	return nil
+}
+
+func downloadChunk(client *http.Client, start, end int64, state *DownloadState, file *os.File) error {
+	req, _ := http.NewRequest("GET", state.URL, nil)
+	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusPartialContent {
+		return fmt.Errorf("сервер вернул %d", resp.StatusCode)
+	}
+
+	file.Seek(start, io.SeekStart)
+	_, err = io.Copy(file, resp.Body)
+	if err != nil {
+		return err
 	}
 
 	return nil
