@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -77,7 +76,7 @@ func downloadFile(client *http.Client, url, savePath string) error {
 	progressFileName := path.Join(savePath, path.Base(url)+".progress")
 	_, err = os.Stat(progressFileName)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if os.IsNotExist(err) {
 			data, _ := json.MarshalIndent(state, "", " ")
 			os.WriteFile(path.Join(savePath, path.Base(url)+".progress"), data, 0644)
 		} else {
